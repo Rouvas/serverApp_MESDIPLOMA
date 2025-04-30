@@ -7,51 +7,19 @@ import { SymptomInstanceDto } from '../dialog/dto/symptom-instance.dto';
 export class NlpService {
   extract(text: string): SymptomInstanceDto[] {
     const lower = text.toLowerCase();
-    const results = new Map<string, SymptomInstanceDto>();
+    const results: SymptomInstanceDto[] = [];
 
-    for (const { key, patterns, negations } of SYMPTOM_PATTERNS) {
-      // Проверяем, есть ли совпадение
-      let found = false;
-      for (const re of patterns) {
-        re.lastIndex = 0;
-        if (re.test(lower)) {
-          found = true;
-          break;
-        }
-      }
+    for (const { key, synonyms, negations } of SYMPTOM_PATTERNS) {
+      // найдём хоть один синоним
+      const found = synonyms.some(s => lower.includes(s));
       if (!found) continue;
 
-      // Проверяем отрицания
-      let isNeg = false;
-      for (const re of negations) {
-        re.lastIndex = 0;
-        if (re.test(lower)) {
-          isNeg = true;
-          break;
-        }
-      }
+      // проверим, нет ли в тексте «не X» или «без X»
+      const isNeg = negations?.some(n => lower.includes(n)) ?? false;
 
-      // Определяем severity и duration, как раньше
-      const sevMatch = /\b(сильн[а-я]*)\b/i.exec(lower);
-      const severity = sevMatch
-        ? sevMatch[1].includes('силь')
-          ? 4
-          : sevMatch[1].includes('легк')
-            ? 2
-            : 3
-        : undefined;
-
-      const durMatch = /(\d+)\s*дн(я|ей)/i.exec(lower);
-      const durationDays = durMatch ? parseInt(durMatch[1], 10) : undefined;
-
-      results.set(key, {
-        key,
-        presence: !isNeg,
-        severity,
-        durationDays,
-      });
+      results.push({ key, presence: !isNeg });
     }
 
-    return Array.from(results.values());
+    return results;
   }
 }

@@ -18,6 +18,12 @@ export class Scenario {
     default: [],
   })
   questions: Array<{ text: string; key: string }>;
+
+  @Prop({ type: [String], default: [] })
+  diseaseKeys: string[];
+
+  @Prop({ type: [String], default: [] })
+  ruleKeys: string[];
 }
 
 export const ScenarioSchema = SchemaFactory.createForClass(Scenario);

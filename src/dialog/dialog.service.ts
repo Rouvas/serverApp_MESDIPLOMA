@@ -23,15 +23,28 @@ export class DialogService {
 
   /** Начало диалога */
   async start(text: string) {
+    console.log('NLT extract:', this.nlp.extract(text));
     const instances = this.nlp.extract(text);
     const keys = instances.map((i) => i.key);
 
     const scenarios = await this.scenariosSvc.findRelevant(keys);
     if (!scenarios.length) return { message: 'Сценарии не найдены', instances };
 
+    scenarios.sort((a, b) => {
+      const aMatch =
+        a.ruleKeys.filter((k) => keys.includes(k)).length / a.ruleKeys.length;
+      const bMatch =
+        b.ruleKeys.filter((k) => keys.includes(k)).length / b.ruleKeys.length;
+      return bMatch - aMatch;
+    });
+
     const scenario = scenarios[0];
-    const ranking: Ranking[] =
-      await this.bayesianSvc.calculateScores(instances);
+
+    // полный глобальный рейтинг
+    const fullRanking = await this.bayesianSvc.calculateScores(instances);
+    // оставляем только те, что входят в сценарий
+    const ranking = fullRanking.filter(r => scenario.diseaseKeys.includes(r.disease));
+
 
     const dialogId = randomUUID();
     this.sessions.set(dialogId, {
@@ -43,7 +56,17 @@ export class DialogService {
     const nextQuestion =
       scenario.questions.find((q) => !keys.includes(q.key)) || null;
 
-    return { dialogId, instances, scenario, nextQuestion, ranking };
+    // Для отладки
+    const diseases = ranking.map(item => item.disease);
+    const line = diseases.join(', ');
+
+    return {
+      summary: `Определил ${scenario.name}. nextQuestion.key: ${nextQuestion.key}. Топ: ${line}`,
+      dialogId,
+      instances,
+      scenario,
+      nextQuestion,
+      ranking };
   }
 
   /** Продолжение диалога */
@@ -74,12 +97,16 @@ export class DialogService {
     // пересчёт рейтинга
     const ranking = await this.bayesianSvc.calculateScores(session.instances);
 
+    const filtered = ranking.filter((r) =>
+      scenario.diseaseKeys.includes(r.disease),
+    );
+
     return {
       dialogId,
       facts: session.instances.filter((i) => i.presence).map((i) => i.key),
       scenario,
       nextQuestion,
-      ranking,
+      ranking: filtered,
       finished,
     };
   }
