@@ -8,7 +8,6 @@ import { DialogModule } from './dialog/dialog.module';
 import { AuthModule } from './auth/auth.module';
 import { ConfigModule } from '@nestjs/config';
 import { UsersModule } from './users/users.module';
-import { DiagnosisModule } from './diagnosis/diagnosis.module';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { SessionModule } from './session/session.module';
 import { AdminModule } from './admin/admin.module';
@@ -30,7 +29,6 @@ import { AdminModule } from './admin/admin.module';
     DialogModule,
     AuthModule,
     UsersModule,
-    DiagnosisModule,
     SessionModule,
     AdminModule,
   ],

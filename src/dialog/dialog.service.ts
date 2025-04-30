@@ -1,14 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { NlpService } from '../nlp/nlp.service';
 import { ScenariosService } from '../scenarios/scenarios.service';
-import { BayesianService } from '../bayesian/bayesian.service';
-import { DialogAnswerResponse } from './interfaces/dialog-response.interface';
 import { randomUUID } from 'crypto';
+import { BayesianService, Ranking } from '../bayesian/bayesian.service';
+import { SymptomInstanceDto } from './dto/symptom-instance.dto';
+import { DialogAnswerResponse } from './interfaces/dialog-response.interface';
+
+interface Session {
+  scenarioId: string;
+  facts: string[]; // подтверждённые симптомы
+  negFacts: string[]; // опровергнутые симптомы
+}
 
 @Injectable()
 export class DialogService {
-  // Хранилище сессий: scenarioId → массив подтверждённых симптомов
-  private sessions = new Map<string, { scenarioId: string; facts: string[] }>();
+  private sessions = new Map<string, Session>();
 
   constructor(
     private readonly symptomsSvc: NlpService,
@@ -16,41 +22,40 @@ export class DialogService {
     private readonly bayesianSvc: BayesianService,
   ) {}
 
-  /**
-   * Начало диалога: из текста извлекаем симптомы, находим сценарий и первый вопрос
-   */
+  /** Начало диалога */
   async start(text: string) {
-    // 1) Разбор свободного текста в список симптомов
-    const symptoms = this.symptomsSvc.extract(text);
+    const symptoms = this.symptomsSvc.extract(text); // string[]
 
-    // 2) Поиск релевантных сценариев
+    const instances: SymptomInstanceDto[] = symptoms.map((name) => ({
+      name,
+      presence: true,
+    }));
+
     const scenarios = await this.scenariosSvc.findRelevant(symptoms);
     if (scenarios.length === 0) {
       return { message: 'Подходящие сценарии не найдены', symptoms };
     }
     const scenario = scenarios[0];
 
-    // 3) Ранжирование диагнозов
-    const ranking = await this.bayesianSvc.calculateScores(symptoms);
+    const ranking: Ranking[] =
+      await this.bayesianSvc.calculateScores(instances);
 
-    // 4) Инициализация сессии
-    // Генерируем уникальный dialogId
     const dialogId = randomUUID();
-    // Сохраняем новую сессию
     this.sessions.set(dialogId, {
+      // eslint-disable-next-line @typescript-eslint/no-base-to-string
       scenarioId: scenario._id.toString(),
       facts: [...symptoms],
+      negFacts: [],
     });
 
-    // 5) Первый вопрос сценария
-    const nextQuestion = scenario.questions[0] || null;
+    // первый вопрос, пропуская уже упомянутые симптомы
+    const nextQuestion =
+      scenario.questions.find((q) => !symptoms.includes(q.key)) || null;
 
     return { dialogId, symptoms, scenario, nextQuestion, ranking };
   }
 
-  /**
-   * Обработка ответа: обновляем факты и возвращаем следующий вопрос + рейтинг
-   */
+  /** Продолжение диалога */
   async next(
     dialogId: string,
     key: string,
@@ -59,24 +64,31 @@ export class DialogService {
     const session = this.sessions.get(dialogId);
     if (!session) throw new NotFoundException(`Session ${dialogId} not found`);
 
-    // Подтверждаем факт
-    if (answer.trim() === 'yes') {
+    const ans = answer.trim().toLowerCase();
+    if (ans === 'yes') {
       if (!session.facts.includes(key)) session.facts.push(key);
+    } else {
+      if (!session.negFacts.includes(key)) session.negFacts.push(key);
     }
 
-    // Получаем сценарий по session.scenarioId
     const scenario = await this.scenariosSvc.findById(session.scenarioId);
     if (!scenario)
       throw new NotFoundException(`Scenario ${session.scenarioId} not found`);
 
-    // Определяем следующий вопрос
-    const idx = scenario.questions.findIndex((q) => q.key === key);
+    // следующий вопрос — первый ещё не заданный и не опровергнутый
+    const asked = new Set([...session.facts, ...session.negFacts]);
     const nextQuestion =
-      idx + 1 < scenario.questions.length ? scenario.questions[idx + 1] : null;
+      scenario.questions.find((q) => !asked.has(q.key)) || null;
     const finished = nextQuestion === null;
 
-    // Пересчитываем Bayes
-    const ranking = await this.bayesianSvc.calculateScores(session.facts);
+    // собираем все факты в DTO
+    const instances: SymptomInstanceDto[] = [
+      ...session.facts.map((name) => ({ name, presence: true })),
+      ...session.negFacts.map((name) => ({ name, presence: false })),
+    ];
+
+    const ranking: Ranking[] =
+      await this.bayesianSvc.calculateScores(instances);
 
     return {
       dialogId,

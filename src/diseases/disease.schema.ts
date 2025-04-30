@@ -4,6 +4,22 @@ import { Document } from 'mongoose';
 export type DiseaseDocument = Disease & Document;
 
 @Schema()
+export class SymptomRule {
+  @Prop({ required: true })
+  name: string;
+
+  @Prop({ required: true })
+  probability: number;
+
+  @Prop()
+  minSeverity?: number;
+
+  @Prop()
+  minDurationDays?: number;
+}
+export const SymptomRuleSchema = SchemaFactory.createForClass(SymptomRule);
+
+@Schema()
 export class Disease {
   @Prop({ required: true }) // название, например "грипп"
   name: string;
@@ -11,9 +27,9 @@ export class Disease {
   @Prop({ required: true, default: 0.01 }) // априорная вероятность
   prior: number;
 
-  // карта симптом→условная вероятность P(symptom|disease)
-  @Prop({ type: Map, of: Number, default: {} })
-  symptoms: Map<string, number>;
+  // карта симптом→условная вероятность P(symptom|disease) и предикаты
+  @Prop({ type: [SymptomRuleSchema], default: [] })
+  symptomRules: SymptomRule[];
 }
 
 export const DiseaseSchema = SchemaFactory.createForClass(Disease);
