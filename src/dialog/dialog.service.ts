@@ -1,15 +1,12 @@
+// src/dialog/services/dialog.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { NlpService } from '../nlp/nlp.service';
 import { ScenariosService } from '../scenarios/scenarios.service';
 import { randomUUID } from 'crypto';
+import { ScenarioTrack, Session } from './interfaces/session.interface';
 import { BayesianService, Ranking } from '../bayesian/bayesian.service';
 import { SymptomInstanceDto } from './dto/symptom-instance.dto';
-import { DialogAnswerResponse } from './interfaces/dialog-response.interface';
-
-interface Session {
-  scenarioId: string;
-  instances: SymptomInstanceDto[];
-}
+import { Scenario } from '../scenarios/scenario.schema';
 
 @Injectable()
 export class DialogService {
@@ -18,96 +15,124 @@ export class DialogService {
   constructor(
     private readonly nlp: NlpService,
     private readonly scenariosSvc: ScenariosService,
-    private readonly bayesianSvc: BayesianService,
+    private readonly bayes: BayesianService,
   ) {}
 
-  /** Начало диалога */
+  /** Старт — запускаем сразу по нескольким сценариям */
   async start(text: string) {
-    console.log('NLT extract:', this.nlp.extract(text));
+    // 1) Извлекаем исходные симптомы, которые назвал пользователь
     const instances = this.nlp.extract(text);
-    const keys = instances.map((i) => i.key);
 
-    const scenarios = await this.scenariosSvc.findRelevant(keys);
-    if (!scenarios.length) return { message: 'Сценарии не найдены', instances };
+    // 2) Полный байесовский рейтинг с учетом найденных симптомов
+    const fullRanking: Ranking[] = await this.bayes.calculateScores(instances);
 
-    scenarios.sort((a, b) => {
-      const aMatch =
-        a.ruleKeys.filter((k) => keys.includes(k)).length / a.ruleKeys.length;
-      const bMatch =
-        b.ruleKeys.filter((k) => keys.includes(k)).length / b.ruleKeys.length;
-      return bMatch - aMatch;
-    });
+    // 3) Берём топ-3 диагноза согласно рейтингу
+    const topDiseases = fullRanking.slice(0, 3).map((r) => r.disease);
 
-    const scenario = scenarios[0];
+    // 4) Для каждого диагноза получаем все вопросники
+    const scenarioArrays = await Promise.all(
+      topDiseases.map((d) => this.scenariosSvc.findByDiseaseKey(d)),
+    );
+    const uniqueScenarios = Array.from(
+      new Map(
+        scenarioArrays.flat().map((s: any) => [s._id.toString(), s]),
+      ).values(),
+    ) as Scenario[];
 
-    // полный глобальный рейтинг
-    const fullRanking = await this.bayesianSvc.calculateScores(instances);
-    // оставляем только те, что входят в сценарий
-    const ranking = fullRanking.filter(r => scenario.diseaseKeys.includes(r.disease));
+    // 5) Оставляем только сценарии с ненулевым покрытием ruleKeys
+    const instanceKeys = new Set(instances.map((i) => i.key));
+    const scenariosWithCov = uniqueScenarios
+      .map((s) => {
+        const hits = s.ruleKeys.filter((k) => instanceKeys.has(k)).length;
+        return { scen: s, coverage: hits / s.ruleKeys.length };
+      })
+      .filter((x) => x.coverage > 0) // убрать те, что не покрывают ни одного ключа
+      .sort((a, b) => b.coverage - a.coverage)
+      .slice(0, 3) // можно ограничить число треков
+      .map((x) => x.scen);
 
+    // 6) Инициализируем треки
+    const askedKeys = new Set(instances.map((i) => i.key));
+    const tracks: ScenarioTrack[] = scenariosWithCov.map((s: any) => ({
+      scenarioId: s._id.toString(),
+      askedKeys: new Set(askedKeys),
+    }));
 
+    // 7) Сохраняем сессию
     const dialogId = randomUUID();
-    this.sessions.set(dialogId, {
-      scenarioId: scenario._id.toString(),
-      instances,
-    });
+    this.sessions.set(dialogId, { instances, tracks });
 
-    // первый вопрос, чей key ещё не в keys
-    const nextQuestion =
-      scenario.questions.find((q) => !keys.includes(q.key)) || null;
-
-    // Для отладки
-    const diseases = ranking.map(item => item.disease);
-    const line = diseases.join(', ');
-
-    return {
-      summary: `Определил ${scenario.name}. nextQuestion.key: ${nextQuestion.key}. Топ: ${line}`,
-      dialogId,
-      instances,
-      scenario,
-      nextQuestion,
-      ranking };
-  }
-
-  /** Продолжение диалога */
-  async next(
-    dialogId: string,
-    key: string,
-    answer: string,
-  ): Promise<DialogAnswerResponse> {
-    const session = this.sessions.get(dialogId);
-    if (!session) throw new NotFoundException(`Session ${dialogId} not found`);
-
-    const presence = answer.trim().toLowerCase() === 'yes';
-    const newInst: SymptomInstanceDto = { key, presence };
-
-    // обновляем или добавляем
-    const idx = session.instances.findIndex((i) => i.key === key);
-    if (idx >= 0) session.instances[idx] = newInst;
-    else session.instances.push(newInst);
-
-    const scenario = await this.scenariosSvc.findById(session.scenarioId);
-    if (!scenario) throw new NotFoundException();
-
-    const askedKeys = session.instances.map((i) => i.key);
-    const nextQuestion =
-      scenario.questions.find((q) => !askedKeys.includes(q.key)) || null;
-    const finished = nextQuestion === null;
-
-    // пересчёт рейтинга
-    const ranking = await this.bayesianSvc.calculateScores(session.instances);
-
-    const filtered = ranking.filter((r) =>
-      scenario.diseaseKeys.includes(r.disease),
+    // 8) Первый вопрос — из первой не исчерпанной ветки
+    const nextQuestion = await this.pickNextQuestion(
+      scenariosWithCov,
+      askedKeys,
     );
 
     return {
       dialogId,
-      facts: session.instances.filter((i) => i.presence).map((i) => i.key),
-      scenario,
+      instances,
+      ranking: fullRanking,
+      tracks: scenariosWithCov,
       nextQuestion,
-      ranking: filtered,
+    };
+  }
+
+  /** Обработка ответа — ходим по всем веткам, обновляем факты и ищем следующий вопрос */
+  async next(dialogId: string, key: string, answer: string) {
+    const session = this.sessions.get(dialogId);
+    if (!session) throw new NotFoundException(`Session ${dialogId} not found`);
+
+    // 1) Добавляем/обновляем факт
+    const presence = answer.trim().toLowerCase() === 'yes';
+    const newInst: SymptomInstanceDto = { key, presence };
+    const idx = session.instances.findIndex((i) => i.key === key);
+    if (idx >= 0) session.instances[idx] = newInst;
+    else session.instances.push(newInst);
+
+    // 2) Обновляем все tracks — отмечаем, что в каждой ветке мы задали этот вопрос
+    for (const track of session.tracks) {
+      track.askedKeys.add(key);
+    }
+
+    // 3) Пересчитываем рейтинг
+    const fullRanking: Ranking[] = await this.bayes.calculateScores(
+      session.instances,
+    );
+
+    // 4) Обновлённое множество заданных ключей
+    const askedKeys = new Set(session.instances.map((i) => i.key));
+
+    // 5) Снова ищем следующий вопрос по трекам
+    //    + собираем сами объекты Scenario для UI
+    const scenarioObjs = await Promise.all(
+      session.tracks.map((t) => this.scenariosSvc.findById(t.scenarioId)),
+    );
+    const nextQuestion = await this.pickNextQuestion(
+      scenarioObjs.filter((s) => !!s) as any,
+      askedKeys,
+    );
+
+    const finished = nextQuestion === null;
+
+    return {
+      dialogId,
+      instances: session.instances,
+      ranking: fullRanking,
+      tracks: scenarioObjs,
+      nextQuestion,
       finished,
     };
+  }
+
+  /** Вспомогательный: из списка сценариев и уже заданных ключей выбирает первый вопрос */
+  private async pickNextQuestion(
+    scenarios: Array<{ questions: Array<{ key: string; text: string }> }>,
+    askedKeys: Set<string>,
+  ): Promise<{ key: string; text: string } | null> {
+    for (const scen of scenarios) {
+      const q = scen.questions.find((q) => !askedKeys.has(q.key));
+      if (q) return q;
+    }
+    return null;
   }
 }

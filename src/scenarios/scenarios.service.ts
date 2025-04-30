@@ -47,6 +47,11 @@ export class ScenariosService {
     return exact.length ? exact : partial;
   }
 
+  /** Находит все сценарии, где diseaseKeys содержит diseaseKey */
+  async findByDiseaseKey(diseaseKey: string): Promise<Scenario[]> {
+    return this.model.find({ diseaseKeys: diseaseKey }).lean().exec();
+  }
+
   async findById(id: string): Promise<ScenarioDocument> {
     const sc = await this.model.findById(id).exec();
     if (!sc) throw new NotFoundException(`Scenario ${id} not found`);
