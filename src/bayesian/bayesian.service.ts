@@ -24,9 +24,7 @@ export class BayesianService {
     const diseases = await this.diseaseModel.find().lean().exec();
 
     // Map<симптом, DTO> фактов с presence=true/false
-    const instMap = new Map<string, SymptomInstanceDto>(
-      instances.map((i) => [i.name, i]),
-    );
+    const instMap = new Map(instances.map((i) => [i.key, i]));
 
     const raw = diseases.map((d) => {
       let score = d.prior;

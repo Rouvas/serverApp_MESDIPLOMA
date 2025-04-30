@@ -1,56 +1,19 @@
-// src/symptoms/symptoms.service.ts
+// src/dialog/nlp/nlp.service.ts
 import { Injectable } from '@nestjs/common';
-
-interface SymptomPattern {
-  key: string; // canonical name, e.g. "кашель"
-  patterns: RegExp[]; // regex-список синонимов
-}
-
-const SYMPTOM_PATTERNS: SymptomPattern[] = [
-  {
-    key: 'лихорадка',
-    patterns: [/\b(лихорадк[аи]|жар|температур[аи])\b/gi],
-  },
-  {
-    key: 'кашель',
-    patterns: [/\b(кашель|кашляю|кашляешь)\b/gi],
-  },
-  {
-    key: 'боль_в_горле',
-    patterns: [/\b(боль в горле|горло болит|комок в горле)\b/gi],
-  },
-  // …допиши остальные симптомы…
-];
+import { SYMPTOM_PATTERNS } from './symptom-patterns';
+import { SymptomInstanceDto } from '../dialog/dto/symptom-instance.dto';
 
 @Injectable()
 export class NlpService {
-  /**
-   * Возвращает массив фактов-симптомов (strings) и их контекст:
-   * [ { key, presence, severity?, durationDays? } ]
-   */
-  extract(text: string): Array<{
-    key: string;
-    presence: boolean;
-    severity?: number;
-    durationDays?: number;
-  }> {
+  extract(text: string): SymptomInstanceDto[] {
     const lower = text.toLowerCase();
-    const results: Map<
-      string,
-      { severity?: number; durationDays?: number; presence: boolean }
-    > = new Map();
+    const results = new Map<string, SymptomInstanceDto>();
 
-    // 1) Ищем отрицания: «не кашляю», «без кашля»
-    const negations = [
-      /\bне\s+(кашляю|кашляешь|кашляют|кашлял[аи]?)\b/gi,
-      /\bбез\s+кашля\b/gi,
-      // …и т. д. для других симптомов…
-    ];
-
-    // 2) Для каждого шаблона симптома
-    for (const { key, patterns } of SYMPTOM_PATTERNS) {
+    for (const { key, patterns, negations } of SYMPTOM_PATTERNS) {
+      // Проверяем, есть ли совпадение
       let found = false;
       for (const re of patterns) {
+        re.lastIndex = 0;
         if (re.test(lower)) {
           found = true;
           break;
@@ -58,30 +21,37 @@ export class NlpService {
       }
       if (!found) continue;
 
-      // 3) Определяем presence: если нашли отрицание конкретно этого симптома — presence=false
-      const isNegated = negations.some((re) => re.test(lower));
-      const presence = !isNegated;
+      // Проверяем отрицания
+      let isNeg = false;
+      for (const re of negations) {
+        re.lastIndex = 0;
+        if (re.test(lower)) {
+          isNeg = true;
+          break;
+        }
+      }
 
-      // 4) Ищем «severity» (цифры + слова «сильный», «легкий»)
-      const sevMatch = /(\d+)\s*дн(я|ей)/.exec(lower);
-      const durationDays = sevMatch ? parseInt(sevMatch[1], 10) : undefined;
-
-      const strengthMatch = /\b(сильн[а-я]*)\s+/.exec(lower);
-      const severity = strengthMatch
-        ? strengthMatch[1].includes('сильн')
+      // Определяем severity и duration, как раньше
+      const sevMatch = /\b(сильн[а-я]*)\b/i.exec(lower);
+      const severity = sevMatch
+        ? sevMatch[1].includes('силь')
           ? 4
-          : undefined
+          : sevMatch[1].includes('легк')
+            ? 2
+            : 3
         : undefined;
 
-      results.set(key, { presence, severity, durationDays });
+      const durMatch = /(\d+)\s*дн(я|ей)/i.exec(lower);
+      const durationDays = durMatch ? parseInt(durMatch[1], 10) : undefined;
+
+      results.set(key, {
+        key,
+        presence: !isNeg,
+        severity,
+        durationDays,
+      });
     }
 
-    // Превращаем в массив ключей
-    return Array.from(results.entries()).map(([key, ctx]) => ({
-      key,
-      presence: ctx.presence,
-      severity: ctx.severity,
-      durationDays: ctx.durationDays,
-    }));
+    return Array.from(results.values());
   }
 }
