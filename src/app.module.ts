@@ -1,10 +1,38 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { DiseasesModule } from './diseases/diseases.module';
+import { MongooseModule } from '@nestjs/mongoose';
+import { NlpModule } from './nlp/nlp.module';
+import { ScenariosModule } from './scenarios/scenarios.module';
+import { BayesianModule } from './bayesian/bayesian.module';
+import { DialogModule } from './dialog/dialog.module';
+import { AuthModule } from './auth/auth.module';
+import { ConfigModule } from '@nestjs/config';
+import { UsersModule } from './users/users.module';
+import { DiagnosisModule } from './diagnosis/diagnosis.module';
+import { MailerModule } from '@nestjs-modules/mailer';
+import { SessionModule } from './session/session.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
-  imports: [],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    MongooseModule.forRoot('mongodb://localhost/mesdiploma'),
+    MailerModule.forRoot({
+      transport: 'smtps://work@gaiduchik.com:tboiprfxcoskcfnp@smtp.yandex.ru',
+      defaults: {
+        from: '"МЭС" <work@gaiduchik.com>',
+      },
+    }),
+    DiseasesModule,
+    NlpModule,
+    ScenariosModule,
+    BayesianModule,
+    DialogModule,
+    AuthModule,
+    UsersModule,
+    DiagnosisModule,
+    SessionModule,
+    AdminModule,
+  ],
 })
 export class AppModule {}
