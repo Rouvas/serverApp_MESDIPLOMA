@@ -8,6 +8,8 @@ import { ITokenPayload } from '../interfaces/token-payload';
 import { User } from '../../users/schemas/user.schema';
 import { SessionService } from '../../session/services/session.service';
 import { MailerService } from '@nestjs-modules/mailer';
+import { ResetDto } from '../dto/reset.dto';
+import { passwordGenerator } from '../functions/passwordGenerator';
 
 @Injectable()
 export class AuthService {
@@ -46,6 +48,28 @@ export class AuthService {
     return { accessToken };
   }
 
+  async resetPassword(dto: ResetDto) {
+    if (!dto)
+      throw new HttpException('Неправильные данные', HttpStatus.BAD_REQUEST);
+    const user = await this.usersService.findOneByEmail(dto.email);
+    if (!user)
+      throw new HttpException('Пользователь не найден', HttpStatus.NOT_FOUND);
+
+    const newPassword = passwordGenerator();
+    user.hashedPassword = await bcrypt.hash(newPassword, 5);
+    await user.save();
+
+    await this.mailerService.sendMail({
+      to: user.email,
+      from: 'work@gaiduchik.com',
+      subject: 'МЭС - Восстановление пароля',
+      html: `Ваш новый пароль: ${newPassword}`,
+    });
+    return {
+      message: 'Пароль успешно изменен, проверьте почту',
+    };
+  }
+
   async registration(dto: RegisterUserDto) {
     const candidate = await this.usersService.findOneByEmail(dto.email);
     if (candidate)
@@ -81,4 +105,13 @@ export class AuthService {
     };
     return this.jwtService.sign(payload);
   }
+
+  getUserByToken(token: string) {
+    return this.usersService.findUserByToken(token);
+  }
+
+  async getUserByEmail(email: string) {
+    return this.usersService.findOneByEmail(email);
+  }
+
 }

@@ -28,4 +28,6 @@ export class UsersService {
   async findAllUsers(): Promise<User[]> {
     return this.userModel.find();
   }
+
+  async findUserByToken(token: string) {}
 }

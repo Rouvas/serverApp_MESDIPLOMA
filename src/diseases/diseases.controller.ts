@@ -31,6 +31,12 @@ export class DiseasesController {
     return this.svc.findAllDiseases();
   }
 
+  @Get(':id')
+  @Roles(Role.Admin, Role.Operator)
+  findById(@Param('id') id: string) {
+    return this.svc.findById(id);
+  }
+
   @Get('search')
   @Roles(Role.Patient, Role.Doctor, Role.Operator, Role.Admin)
   findBySymptoms(@Query('symptoms') list: string) {

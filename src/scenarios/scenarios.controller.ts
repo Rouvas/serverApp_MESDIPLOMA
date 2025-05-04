@@ -7,13 +7,10 @@ import {
   Param,
   Delete,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { ScenariosService } from './scenarios.service';
 import { CreateScenarioDto } from './dto/create-scenario.dto';
 import { UpdateScenarioDto } from './dto/update-scenario.dto';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { AuthGuard } from '@nestjs/passport';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../users/schemas/user.schema';
 
@@ -32,6 +29,12 @@ export class ScenariosController {
   @Roles(Role.Patient, Role.Doctor, Role.Operator, Role.Admin)
   findAll() {
     return this.svc.findAll();
+  }
+
+  @Get(':id')
+  @Roles(Role.Patient, Role.Doctor, Role.Operator, Role.Admin)
+  findById(@Param('id') id: string) {
+    return this.svc.findById(id);
   }
 
   @Get('search')

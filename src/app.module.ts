@@ -11,6 +11,7 @@ import { UsersModule } from './users/users.module';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { SessionModule } from './session/session.module';
 import { AdminModule } from './admin/admin.module';
+import { StoriesModule } from './stories/stories.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AdminModule } from './admin/admin.module';
     UsersModule,
     SessionModule,
     AdminModule,
+    StoriesModule,
   ],
 })
 export class AppModule {}

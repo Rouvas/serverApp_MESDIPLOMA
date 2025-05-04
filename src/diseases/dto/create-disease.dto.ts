@@ -4,8 +4,37 @@ import {
   IsNumber,
   Min,
   Max,
-  IsObject,
+  IsArray,
+  ValidateNested,
+  IsOptional
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+/**
+ * DTO для правила симптома при заболевании
+ */
+export class CreateSymptomRuleDto {
+  /** Название симптома из словаря */
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  /** Условная вероятность появления симптома [0,1] */
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  probability: number;
+
+  /** Минимальная тяжесть симптома (необязательно) */
+  @IsOptional()
+  @IsNumber()
+  minSeverity?: number;
+
+  /** Минимальная длительность симптома в днях (необязательно) */
+  @IsOptional()
+  @IsNumber()
+  minDurationDays?: number;
+}
 
 /**
  * DTO для создания новой записи о заболевании
@@ -28,16 +57,10 @@ export class CreateDiseaseDto {
   prior: number;
 
   /**
-   * Карта симптом→P(symptom | disease).
-   * Ключ — название симптома из symptomDictionary,
-   * значение — условная вероятность в [0,1].
-   *
-   * Пример:
-   * {
-   *   "кашель": 0.8,
-   *   "лихорадка": 0.9
-   * }
+   * Список правил симптомов для болезни
    */
-  @IsObject()
-  symptoms: Record<string, number>;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSymptomRuleDto)
+  symptomRules: CreateSymptomRuleDto[];
 }
