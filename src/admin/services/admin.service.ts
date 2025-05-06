@@ -3,6 +3,7 @@ import { UsersService } from '../../users/services/users.service';
 import { DiseasesService } from '../../diseases/diseases.service';
 import { ScenariosService } from '../../scenarios/scenarios.service';
 import { SessionService } from '../../session/services/session.service';
+import { UpdateUserDto } from '../../users/dto/update-user.dto';
 
 @Injectable()
 export class AdminService {
@@ -25,6 +26,11 @@ export class AdminService {
   // Получение юзера
   async getUser(id: string) {
     return this.userSvc.findById(id);
+  }
+
+  // Изменение пользователя
+  async updateUser(id: string, user: UpdateUserDto) {
+    return this.userSvc.updateUser(id, user);
   }
 
   /**

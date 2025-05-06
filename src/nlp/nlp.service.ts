@@ -11,15 +11,19 @@ export class NlpService {
 
     for (const { key, synonyms, negations } of SYMPTOM_PATTERNS) {
       // найдём хоть один синоним
-      const found = synonyms.some(s => lower.includes(s));
+      const found = synonyms.some((s) => lower.includes(s));
       if (!found) continue;
 
       // проверим, нет ли в тексте «не X» или «без X»
-      const isNeg = negations?.some(n => lower.includes(n)) ?? false;
+      const isNeg = negations?.some((n) => lower.includes(n)) ?? false;
 
       results.push({ key, presence: !isNeg });
     }
 
     return results;
+  }
+
+  findAllSymptoms() {
+    return SYMPTOM_PATTERNS
   }
 }

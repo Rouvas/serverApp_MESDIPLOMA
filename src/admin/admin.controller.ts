@@ -1,7 +1,8 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { AdminService } from './services/admin.service';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../users/schemas/user.schema';
+import { UpdateUserDto } from '../users/dto/update-user.dto';
 
 @Controller('admin')
 export class AdminController {
@@ -41,6 +42,12 @@ export class AdminController {
   @Roles(Role.Admin)
   getUser(@Param('id') id: string) {
     return this.adminSvc.getUser(id);
+  }
+
+  @Patch('/users/:id')
+  @Roles(Role.Admin)
+  patchUser(@Param('id') id: string, @Body() user: UpdateUserDto) {
+    return this.adminSvc.updateUser(id, user);
   }
 
   @Get('sessions')

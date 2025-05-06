@@ -84,7 +84,7 @@ export class AuthService {
       hashedPassword: hashedPassword,
     });
 
-    const accessToken = await this.generateToken(user);
+    const accessToken = this.generateToken(user);
 
     // const link
 
@@ -98,16 +98,12 @@ export class AuthService {
     return { accessToken };
   }
 
-  async generateToken(user: User) {
+  generateToken(user: User) {
     const payload: ITokenPayload = {
       email: user.email,
       role: user.role,
     };
     return this.jwtService.sign(payload);
-  }
-
-  getUserByToken(token: string) {
-    return this.usersService.findUserByToken(token);
   }
 
   async getUserByEmail(email: string) {
