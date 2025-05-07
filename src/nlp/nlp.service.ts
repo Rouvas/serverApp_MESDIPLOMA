@@ -1,29 +1,41 @@
-// src/dialog/nlp/nlp.service.ts
 import { Injectable } from '@nestjs/common';
-import { SYMPTOM_PATTERNS } from './symptom-patterns';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { SymptomInstanceDto } from '../dialog/dto/symptom-instance.dto';
+import { Nlp, NlpDocument } from './schemas/nlp.schema';
 
 @Injectable()
 export class NlpService {
-  extract(text: string): SymptomInstanceDto[] {
+  constructor(
+    @InjectModel(Nlp.name) private readonly nlpModel: Model<NlpDocument>,
+  ) {}
+
+  /**
+   * Извлекает упоминания симптомов из текста, опираясь только на записи в БД
+   */
+  async extract(text: string): Promise<SymptomInstanceDto[]> {
     const lower = text.toLowerCase();
-    const results: SymptomInstanceDto[] = [];
+    // Берём все записи из коллекции
+    const symptomsDictionary = await this.nlpModel.find().lean().exec();
 
-    for (const { key, synonyms, negations } of SYMPTOM_PATTERNS) {
-      // найдём хоть один синоним
-      const found = synonyms.some((s) => lower.includes(s));
-      if (!found) continue;
-
-      // проверим, нет ли в тексте «не X» или «без X»
-      const isNeg = negations?.some((n) => lower.includes(n)) ?? false;
-
-      results.push({ key, presence: !isNeg });
-    }
-
-    return results;
+    return symptomsDictionary
+      .filter(({ synonyms }) =>
+        synonyms.some(s => lower.includes(s))
+      )
+      .map(({ key, negations }) => ({
+        key,
+        presence: !((negations ?? []).some(n => lower.includes(n))),
+      }));
   }
 
-  findAllSymptoms() {
-    return SYMPTOM_PATTERNS
+  /**
+   * Возвращает весь словарь симптомов из БД
+   */
+  async findAllSymptoms(): Promise<Array<{
+    key: string;
+    synonyms: string[];
+    negations: string[];
+  }>> {
+    return this.nlpModel.find().lean().exec();
   }
 }

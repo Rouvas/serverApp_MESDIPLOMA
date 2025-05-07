@@ -1,8 +1,11 @@
 // src/dialog/dialog.controller.ts
-import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, BadRequestException, UseGuards, Req } from '@nestjs/common';
 import { DialogService } from './dialog.service';
 import { StartDialogDto } from './dto/start-dialog.dto';
 import { NextDialogDto } from './dto/next-dialog.dto';
+import { SaveDialogDto } from './dto/save-dialog.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 @Controller('dialog')
 export class DialogController {
@@ -23,5 +26,16 @@ export class DialogController {
       throw new BadRequestException('dialogId и key обязательны');
     }
     return this.dialogSvc.next(dialogId, key, answer);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('save')
+  save(@Body() dto: SaveDialogDto, @Req() req: any) {
+    const { dialogId } = dto;
+    if (!dialogId) {
+      throw new BadRequestException('dialogId обязателен');
+    }
+    return this.dialogSvc.saveDialog(dialogId, req.user._id.toString())
   }
 }
