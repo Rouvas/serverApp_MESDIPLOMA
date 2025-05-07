@@ -41,7 +41,7 @@ export class CreateSymptomRuleDto {
  */
 export class UpdateDiseaseDto {
   /**
-   * Уникальное человекочитаемое название болезни,
+   * Уникальное название болезни,
    * например "грипп" или "ОРВИ"
    */
   @IsString()
