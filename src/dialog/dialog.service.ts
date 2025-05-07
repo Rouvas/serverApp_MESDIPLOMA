@@ -3,10 +3,11 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { NlpService } from '../nlp/nlp.service';
 import { ScenariosService } from '../scenarios/scenarios.service';
-import { BayesianService, Ranking } from '../bayesian/bayesian.service';
+import { BayesianService } from '../bayesian/bayesian.service';
 import { SymptomInstanceDto } from './dto/symptom-instance.dto';
 import { Scenario } from '../scenarios/scenario.schema';
 import { ScenarioTrack, Session } from './interfaces/session.interface';
+import { StoriesService } from '../stories/services/stories.service';
 
 @Injectable()
 export class DialogService {
@@ -16,6 +17,7 @@ export class DialogService {
     private readonly nlp: NlpService,
     private readonly scenariosSvc: ScenariosService,
     private readonly bayes: BayesianService,
+    private readonly story: StoriesService,
   ) {}
 
   async start(text: string) {
@@ -54,7 +56,7 @@ export class DialogService {
     }));
 
     const dialogId = randomUUID();
-    this.sessions.set(dialogId, { instances, tracks });
+    this.sessions.set(dialogId, { instances, tracks, questionHistory: [] });
 
     const nextQuestion = this.pickNextQuestion(goodScenarios, instanceKeys);
     return {
@@ -71,6 +73,7 @@ export class DialogService {
     if (!session) throw new NotFoundException(`Session ${dialogId} not found`);
 
     const presence = answer.trim().toLowerCase() === 'yes';
+
     const newInst: SymptomInstanceDto = { key, presence };
     const idx = session.instances.findIndex((i) => i.key === key);
     if (idx >= 0) session.instances[idx] = newInst;
@@ -84,6 +87,17 @@ export class DialogService {
     const scenarioObjs = await Promise.all(
       session.tracks.map((t) => this.scenariosSvc.findById(t.scenarioId)),
     );
+
+    const questionText =
+      scenarioObjs.flatMap((s) => s.questions).find((q) => q.key === key)
+        ?.text ?? key;
+
+    // записываем историю без answeredAt
+    session.questionHistory.push({
+      key,
+      text: questionText,
+      answer: presence,
+    });
 
     const askedKeys = new Set(session.instances.map((i) => i.key));
     const nextQuestion = this.pickNextQuestion(
@@ -105,8 +119,27 @@ export class DialogService {
   async saveDialog(dialogId: string, userId: string) {
     const session = this.sessions.get(dialogId);
     if (!session) throw new NotFoundException(`Session ${dialogId} not found`);
-    console.log(session)
-    return session;
+
+    const statistics = {
+      questionCount: session.questionHistory.length,
+      scenarioCount: session.tracks.length,
+    };
+    const scenarioIds = session.tracks.map((t) => t.scenarioId);
+    const ranking = await this.bayes.calculateScores(session.instances);
+
+    // сохраняем: в поле createdAt автоматически запишется время сохранения
+    const dialog = await this.story.saveStory({
+      dialogId,
+      userId,
+      scenarioIds,
+      questionHistory: session.questionHistory,
+      instances: session.instances,
+      ranking,
+      statistics,
+    });
+
+    this.sessions.delete(dialogId);
+    return dialog;
   }
 
   private pickNextQuestion(

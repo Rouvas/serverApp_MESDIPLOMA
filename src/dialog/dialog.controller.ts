@@ -36,6 +36,6 @@ export class DialogController {
     if (!dialogId) {
       throw new BadRequestException('dialogId обязателен');
     }
-    return this.dialogSvc.saveDialog(dialogId, req.user._id.toString())
+    return this.dialogSvc.saveDialog(dialogId, req.user._id.toString());
   }
 }
