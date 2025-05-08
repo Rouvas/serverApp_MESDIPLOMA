@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Story } from '../schemas/story.schema';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -17,7 +17,13 @@ export class StoriesService {
     });
   }
 
-  async findScenarioByUserId(userId: string): Promise<ScenarioDocument[]> {
+  async findScenariosByUserId(userId: string): Promise<ScenarioDocument[]> {
     return this.storyModel.find({ userId: userId });
+  }
+
+  async findStoryById(id: string): Promise<Story> {
+    const sc = await this.storyModel.findById(id).exec();
+    if (!sc) throw new NotFoundException(`Story ${id} not found`);
+    return sc;
   }
 }

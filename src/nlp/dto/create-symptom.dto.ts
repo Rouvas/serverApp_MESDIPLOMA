@@ -5,7 +5,7 @@ export class CreateSymptomDto {
   /** Симптом */
   @IsString()
   @IsNotEmpty()
-  name: string;
+  key: string;
 
   @IsArray()
   @IsNotEmpty()

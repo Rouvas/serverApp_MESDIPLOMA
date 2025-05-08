@@ -52,7 +52,7 @@ export class NlpService {
   async findSymptomById(
     id: string,
   ): Promise<{ key: string; synonyms: string[]; negations: string[] }> {
-    const symptom = await this.nlpModel.findOne({ where: { id } });
+    const symptom = await this.nlpModel.findOne({ _id: id });
     if (!symptom) throw new HttpException('Не найдено', HttpStatus.NOT_FOUND);
     return symptom;
   }

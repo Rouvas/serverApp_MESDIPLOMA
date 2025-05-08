@@ -1,4 +1,4 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { StoriesService } from './services/stories.service';
@@ -13,6 +13,13 @@ export class StoriesController {
   @ApiResponse({ status: 200 })
   @Get('/my')
   findUserStories(@Req() req: any) {
-    return this.storiesService.findScenarioByUserId(req.user._id);
+    return this.storiesService.findScenariosByUserId(req.user._id);
+  }
+
+  @ApiOperation({ summary: 'Получение пройденной диагностики' })
+  @ApiResponse({ status: 200 })
+  @Get(':id')
+  findStoryById(@Param('id') id: string) {
+    return this.storiesService.findStoryById(id);
   }
 }
