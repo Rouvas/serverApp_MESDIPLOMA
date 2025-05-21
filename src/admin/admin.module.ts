@@ -9,7 +9,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Session, SessionSchema } from '../session/schemas/session.schema';
 import { Scenario, ScenarioSchema } from '../scenarios/scenario.schema';
-import { Disease, DiseaseSchema } from '../diseases/disease.schema';
+import { Disease, DiseaseSchema } from '../diseases/schemas/disease.schema';
 
 @Module({
   imports: [

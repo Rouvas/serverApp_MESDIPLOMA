@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Disease } from '../diseases/disease.schema';
+import { Disease } from '../diseases/schemas/disease.schema';
 import { SymptomInstanceDto } from '../dialog/dto/symptom-instance.dto';
 
 export interface Ranking {

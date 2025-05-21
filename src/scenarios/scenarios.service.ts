@@ -20,18 +20,6 @@ export class ScenariosService {
     return this.model.find().exec();
   }
 
-  /**
-   * Возвращает сценарии, у которых все triggerSymptoms содержатся в предоставленном списке симптомов
-   */
-  /**
-   * Фильтрует сценарии по логической формуле rule
-   */
-  // async findRelevant(symptoms: string[]): Promise<ScenarioDocument[]> {
-  //   const all = await this.findAll();
-  //   const facts = new Set(symptoms);
-  //
-  //   return all.filter((s) => evalRule(s.rule, facts));
-  // }
   async findRelevant(symptoms: string[]): Promise<ScenarioDocument[]> {
     const all = await this.findAll();
     const facts = new Set(symptoms);

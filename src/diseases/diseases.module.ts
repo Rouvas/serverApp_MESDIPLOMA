@@ -1,10 +1,7 @@
 import { Module } from '@nestjs/common';
 import { DiseasesService } from './diseases.service';
 import { DiseasesController } from './diseases.controller';
-import {
-  Disease,
-  DiseaseSchema,
-} from './disease.schema';
+import { Disease, DiseaseSchema } from './schemas/disease.schema';
 import { MongooseModule } from '@nestjs/mongoose';
 
 @Module({

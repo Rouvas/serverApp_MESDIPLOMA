@@ -1,5 +1,11 @@
-// src/dialog/dialog.controller.ts
-import { Controller, Post, Body, BadRequestException, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  BadRequestException,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { DialogService } from './dialog.service';
 import { StartDialogDto } from './dto/start-dialog.dto';
 import { NextDialogDto } from './dto/next-dialog.dto';

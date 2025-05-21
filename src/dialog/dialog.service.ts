@@ -1,4 +1,3 @@
-// src/dialog/services/dialog.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { NlpService } from '../nlp/nlp.service';
@@ -29,7 +28,6 @@ export class DialogService {
       topDiseases.map((d) => this.scenariosSvc.findByDiseaseKey(d)),
     );
 
-    // <-- Патчим здесь
     const uniqueScenarios = Array.from(
       new Map<string, Scenario>(
         scenarioArrays

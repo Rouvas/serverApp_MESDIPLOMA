@@ -1,10 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Disease, DiseaseDocument } from './disease.schema';
+import { Disease, DiseaseDocument } from './schemas/disease.schema';
 import { Model } from 'mongoose';
 import { CreateDiseaseDto } from './dto/create-disease.dto';
 import { UpdateDiseaseDto } from './dto/update-disease.dto';
-import { UserDocument } from '../users/schemas/user.schema';
 
 @Injectable()
 export class DiseasesService {

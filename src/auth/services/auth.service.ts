@@ -38,7 +38,7 @@ export class AuthService {
     if (!passwordsIsEqual)
       throw new HttpException('Неверный пароль', HttpStatus.BAD_REQUEST); // Password not equals
 
-    const accessToken = await this.generateToken(user);
+    const accessToken = this.generateToken(user);
 
     const session = {
       accessToken: accessToken,
@@ -86,8 +86,6 @@ export class AuthService {
 
     const accessToken = this.generateToken(user);
 
-    // const link
-
     await this.mailerService.sendMail({
       to: user.email,
       from: 'work@gaiduchik.com',
@@ -109,5 +107,4 @@ export class AuthService {
   async getUserByEmail(email: string) {
     return this.usersService.findOneByEmail(email);
   }
-
 }

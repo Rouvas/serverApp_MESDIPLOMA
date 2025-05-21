@@ -6,7 +6,7 @@ import {
   DiseaseSchema,
   SymptomRule,
   SymptomRuleSchema,
-} from '../diseases/disease.schema';
+} from '../diseases/schemas/disease.schema';
 
 @Module({
   imports: [
@@ -15,7 +15,6 @@ import {
       { name: SymptomRule.name, schema: SymptomRuleSchema },
     ]),
   ],
-  // imports: [DiseasesModule],
   providers: [BayesianService],
   exports: [BayesianService],
 })
