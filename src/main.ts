@@ -1,5 +1,6 @@
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import * as morgan from 'morgan';
 import { AppModule } from './app.module';
@@ -24,6 +25,15 @@ async function bootstrap() {
       transform: true, // автоматически преобразует payload в нужные типы
     }),
   );
+
+  const config = new DocumentBuilder()
+    .setTitle('MES API')
+    .setDescription('API documentation for MES project')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('docs', app, document);
 
   const port = process.env.PORT || 3000;
   await app.listen(port);

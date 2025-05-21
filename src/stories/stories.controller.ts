@@ -1,8 +1,9 @@
 import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { StoriesService } from './services/stories.service';
 
+@ApiTags('stories')
 @Controller('stories')
 export class StoriesController {
   constructor(private readonly storiesService: StoriesService) {}
