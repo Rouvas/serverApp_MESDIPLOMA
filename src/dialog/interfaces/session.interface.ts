@@ -9,6 +9,9 @@ export interface Session {
   instances: SymptomInstanceDto[]; // все факты: yes/no
   tracks: ScenarioTrack[]; // по одному треку на сценарий
   questionHistory: QuestionHistoryItem[]; // вопросы, которые были
+  fullRanking: any;
+  topRanking: any;
+  finished: boolean;
 }
 
 export interface QuestionHistoryItem {

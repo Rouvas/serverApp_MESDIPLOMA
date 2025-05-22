@@ -1,12 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { NlpService } from '../nlp/nlp.service';
 import { ScenariosService } from '../scenarios/scenarios.service';
 import { BayesianService } from '../bayesian/bayesian.service';
 import { SymptomInstanceDto } from './dto/symptom-instance.dto';
-import { Scenario } from '../scenarios/scenario.schema';
-import { ScenarioTrack, Session } from './interfaces/session.interface';
+import { Session } from './interfaces/session.interface';
 import { StoriesService } from '../stories/services/stories.service';
+import { evaluateScenarioRule } from '../scenarios/functions/rule-evaluator';
 
 // Максимальное количество элементов для top-ranking
 const MAX_RANKING = 4;
@@ -28,195 +28,177 @@ export class DialogService {
    * выбираем сценарии и готовим первый вопрос
    */
   async start(text: string) {
-    // Извлечение симптомов из текста пользователя
-    const instances = await this.nlp.extract(text);
+    const instances: SymptomInstanceDto[] = await this.nlp.extract(text);
+    const instanceKeys = instances.filter((i) => i.presence).map((i) => i.key);
 
-    // Получаем полный рейтинг вероятностей всех заболеваний
+    // Расчет базового рейтинга
     const baseRanking = await this.bayes.calculateScores(instances);
 
-    // Пересчет процентов для fullRanking с суммой ровно 100%
+    // Полный рейтинг (fullRanking)
     const sumFull = baseRanking.reduce((sum, r) => sum + r.score, 0) || 1;
-    let cumulativeFull = 0;
+    let cumFull = 0;
     const fullRanking = baseRanking.map((r, idx) => {
       const rawPct = (r.score / sumFull) * 100;
-      // Для последнего элемента компенсируем остаток, чтобы сумма была 100
       const pct =
-        idx === baseRanking.length - 1
-          ? 100 - cumulativeFull
-          : Math.floor(rawPct);
-      cumulativeFull += pct;
+        idx === baseRanking.length - 1 ? 100 - cumFull : Math.floor(rawPct);
+      cumFull += pct;
       return { disease: r.disease, score: r.score, percentage: pct };
     });
 
-    // Выбираем топ-N заболеваний для более детального рассмотрения
-    const rawTop = baseRanking.slice(0, MAX_RANKING);
+    // Топ-4 рейтинг (topRanking)
+    const rawTop = baseRanking.slice(0, 4);
     const sumTop = rawTop.reduce((sum, r) => sum + r.score, 0) || 1;
-    let cumulativeTop = 0;
+    let cumTop = 0;
     const topRanking = rawTop.map((r, idx) => {
       const rawPct = (r.score / sumTop) * 100;
-      // Аналогично компенсируем остаток в топ-рейтинге
-      const pct =
-        idx === rawTop.length - 1 ? 100 - cumulativeTop : Math.floor(rawPct);
-      cumulativeTop += pct;
+      const pct = idx === rawTop.length - 1 ? 100 - cumTop : Math.floor(rawPct);
+      cumTop += pct;
       return { disease: r.disease, score: r.score, percentage: pct };
     });
 
-    // Определяем ключи топ-заболеваний для поиска соответствующих сценариев
+    // Загрузка сценариев по топ-болезням и по симптомам
     const topDiseases = rawTop.map((r) => r.disease);
-    const scenarioArrays = await Promise.all(
+    const byDisease = await Promise.all(
       topDiseases.map((d) => this.scenariosSvc.findByDiseaseKey(d)),
     );
-
-    // Формируем уникальный список сценариев
-    const uniqueScenarios = Array.from(
-      new Map<string, Scenario>(
-        scenarioArrays
-          .flat()
-          .map((s) => [(s as any)._id.toString(), s] as [string, Scenario]),
-      ).values(),
+    const allScenarios = await this.scenariosSvc.findAll();
+    const bySymptoms = allScenarios.filter((s) =>
+      s.ruleKeys.some((k) => instanceKeys.includes(k)),
     );
 
-    // Отбираем релевантные сценарии на основе совпадения ключей симптомов
-    const instanceKeys = new Set(instances.map((i) => i.key));
-    const goodScenarios = uniqueScenarios
-      .map((s) => {
-        // Доля покрытия: сколько ключей сценария уже встречено
-        const hits = s.ruleKeys.filter((k) => instanceKeys.has(k)).length;
-        return { scenario: s, coverage: hits / s.ruleKeys.length };
-      })
-      .filter((x) => x.coverage > 0) // Оставляем те, что хоть по чему-то совпали
-      .sort((a, b) => b.coverage - a.coverage)
-      .slice(0, 3) // Берем топ-3 сценария
-      .map((x) => x.scenario);
+    const combined = new Map<string, any>();
+    for (const s of [...byDisease.flat(), ...bySymptoms]) {
+      combined.set(String((s as any)._id), s);
+    }
+    const scenarios = Array.from(combined.values());
 
-    // Инициализация треков: для каждого сценария хранится set заданных вопросов
-    const tracks: ScenarioTrack[] = goodScenarios.map((s) => ({
-      scenarioId: (s as any)._id.toString(),
-      askedKeys: new Set(instanceKeys),
-    }));
+    console.log('[Dialog] Symptoms:', instanceKeys);
+    console.log('[Dialog] Top diseases:', topDiseases);
+    console.log(
+      '[Dialog] Selected scenarios:',
+      scenarios.map((s) => s.name),
+    );
 
-    // Создаем новую сессию диалога и сохраняем ее
+    const matched = scenarios.filter((s) =>
+      evaluateScenarioRule(s.rule, instances),
+    );
     const dialogId = randomUUID();
-    this.sessions.set(dialogId, { instances, tracks, questionHistory: [] });
 
-    // Подсчет общего числа уникальных вопросов по всем выбранным сценариям
-    const allQuestionKeys = new Set<string>();
-    goodScenarios.forEach((s) =>
-      s.questions.forEach((q) => allQuestionKeys.add(q.key)),
-    );
-    const totalQuestions = allQuestionKeys.size;
+    // Инициализация сессии
+    const session = {
+      instances,
+      fullRanking,
+      topRanking,
+      scenarios: matched,
+      tracks: matched.map((s) => ({
+        scenarioId: String(s._id),
+        askedKeys: new Set<string>(),
+      })),
+      questionHistory: [] as { key: string; text: string; answer: boolean }[],
+      finished: matched.length === 0,
+    };
 
-    // Номер текущего вопроса (первый шаг)
-    const questionNumber = 1;
-    const percentComplete = 0; // пока нет ответов, процент = 0
+    this.sessions.set(dialogId, session);
 
-    // Определяем текст и ключ следующего вопроса
-    const nextQuestion = this.pickNextQuestion(goodScenarios, instanceKeys);
-    const finished = nextQuestion === null;
-
+    const nextQuestion = matched.length ? matched[0].questions[0] : null;
     return {
       dialogId,
       instances,
       fullRanking,
       topRanking,
-      scenarios: goodScenarios,
+      scenarios: matched,
       nextQuestion,
-      questionNumber,
-      totalQuestions,
-      percentComplete,
-      finished,
+      questionNumber: nextQuestion ? 1 : 0,
+      totalQuestions: nextQuestion ? matched[0].questions.length : 0,
+      percentComplete: 0,
+      finished: matched.length === 0,
     };
   }
 
-  /**
-   * Обработка ответа пользователя: обновляем инстансы, рейтинги,
-   * историю вопросов и вычисляем следующий вопрос
-   */
   async next(dialogId: string, key: string, answer: string) {
     const session = this.sessions.get(dialogId);
     if (!session) throw new NotFoundException(`Session ${dialogId} not found`);
 
-    // Интерпретируем ответ как да/нет
+    // Обработка ответа
     const presence = answer.trim().toLowerCase() === 'yes';
-    const newInst: SymptomInstanceDto = { key, presence };
+    const idx = session.instances.findIndex((i: any) => i.key === key);
+    if (idx >= 0) session.instances[idx].presence = presence;
+    else session.instances.push({ key, presence });
 
-    // Обновляем или добавляем новую запись о симптоме
-    const idx = session.instances.findIndex((i) => i.key === key);
-    if (idx >= 0) session.instances[idx] = newInst;
-    else session.instances.push(newInst);
-
-    // Отмечаем вопрос как заданный во всех треках сценариев
-    for (const track of session.tracks) track.askedKeys.add(key);
+    // Отметить вопрос в треке
+    const track = session.tracks[0];
+    if (!track) throw new NotFoundException(`No active track`);
+    if (!track.askedKeys) track.askedKeys = new Set<string>();
+    track.askedKeys.add(key);
 
     // Пересчет рейтингов
     const baseRanking = await this.bayes.calculateScores(session.instances);
-
-    // fullRanking с процентами
+    // fullRanking
     const sumFull = baseRanking.reduce((sum, r) => sum + r.score, 0) || 1;
-    let cumulativeFull = 0;
-    const fullRanking = baseRanking.map((r, idx) => {
+    let cumFull2 = 0;
+    session.fullRanking = baseRanking.map((r, idx) => {
       const rawPct = (r.score / sumFull) * 100;
       const pct =
-        idx === baseRanking.length - 1
-          ? 100 - cumulativeFull
-          : Math.floor(rawPct);
-      cumulativeFull += pct;
+        idx === baseRanking.length - 1 ? 100 - cumFull2 : Math.floor(rawPct);
+      cumFull2 += pct;
       return { disease: r.disease, score: r.score, percentage: pct };
     });
-
-    // topRanking с относительными процентами внутри топ-4
-    const rawTop = baseRanking.slice(0, MAX_RANKING);
-    const sumTop = rawTop.reduce((sum, r) => sum + r.score, 0) || 1;
-    let cumulativeTop = 0;
-    const topRanking = rawTop.map((r, idx) => {
-      const rawPct = (r.score / sumTop) * 100;
+    // topRanking
+    const rawTop2 = baseRanking.slice(0, 4);
+    const sumTop2 = rawTop2.reduce((sum, r) => sum + r.score, 0) || 1;
+    let cumTop2 = 0;
+    session.topRanking = rawTop2.map((r, idx) => {
+      const rawPct = (r.score / sumTop2) * 100;
       const pct =
-        idx === rawTop.length - 1 ? 100 - cumulativeTop : Math.floor(rawPct);
-      cumulativeTop += pct;
+        idx === rawTop2.length - 1 ? 100 - cumTop2 : Math.floor(rawPct);
+      cumTop2 += pct;
       return { disease: r.disease, score: r.score, percentage: pct };
     });
 
-    // Загрузка сценариев для текущей сессии
+    // Загрузка сценариев
     const scenarioObjs = await Promise.all(
-      session.tracks.map((t) => this.scenariosSvc.findById(t.scenarioId)),
+      session.tracks.map((t: any) => this.scenariosSvc.findById(t.scenarioId)),
     );
 
-    // Сохраняем историю вопроса и ответа
+    // История вопросов
     const questionText =
-      scenarioObjs.flatMap((s) => s.questions).find((q) => q.key === key)
-        ?.text ?? key;
+      scenarioObjs
+        .flatMap((s: any) => s.questions)
+        .find((q: any) => q.key === key)?.text || key;
     session.questionHistory.push({ key, text: questionText, answer: presence });
 
-    // Определяем следующий вопрос и статус завершения
-    const askedKeys = new Set(session.instances.map((i) => i.key));
+    // Выбор следующего вопроса
+    const askedKeys = session.tracks.reduce((set: Set<string>, t: any) => {
+      t.askedKeys.forEach((k: string) => set.add(k));
+      return set;
+    }, new Set<string>());
     const nextQuestion = this.pickNextQuestion(scenarioObjs as any, askedKeys);
-    const finished = nextQuestion === null;
+    session.finished = !nextQuestion;
 
-    // Подсчет прогресса диалога
+    // Прогресс
     const allKeys = new Set<string>();
-    scenarioObjs.forEach((s) => s.questions.forEach((q) => allKeys.add(q.key)));
+    scenarioObjs.forEach((s: any) =>
+      s.questions.forEach((q: any) => allKeys.add(q.key)),
+    );
     const answeredCount = askedKeys.size;
-    const questionNumber = finished
-      ? session.questionHistory.length
-      : session.questionHistory.length + 1;
+    const questionNumber =
+      session.questionHistory.length + (nextQuestion ? 1 : 0);
     const totalQuestions = allKeys.size;
-    const percentComplete = finished
+    const percentComplete = session.finished
       ? 100
-      : totalQuestions
-        ? Math.round((answeredCount / totalQuestions) * 100)
-        : 0;
+      : Math.round((answeredCount / totalQuestions) * 100);
 
     return {
       dialogId,
       instances: session.instances,
-      fullRanking,
-      topRanking,
+      fullRanking: session.fullRanking,
+      topRanking: session.topRanking,
       scenarios: scenarioObjs,
       nextQuestion,
       questionNumber,
       totalQuestions,
       percentComplete,
-      finished,
+      finished: session.finished,
     };
   }
 

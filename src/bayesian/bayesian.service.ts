@@ -18,53 +18,57 @@ export class BayesianService {
 
   /**
    * Ранжирует заболевания по апостериорной вероятности,
-   * обрабатывая только те правила (symptomRules), по которым есть факт.
+   * учитывая штраф за нехарактерные симптомы
    */
   async calculateScores(instances: SymptomInstanceDto[]): Promise<Ranking[]> {
     const diseases = await this.diseaseModel.find().lean().exec();
 
-    // Map<симптом, DTO> фактов с presence=true/false
     const instMap = new Map(instances.map((i) => [i.key, i]));
+    const allSymptomKeys = new Set(instances.map((i) => i.key));
 
-    const raw = diseases.map((d) => {
-      let score = d.prior;
+    // Штраф для каждого неподтвержденного речения о наличии симптома
+    const MISSING_PRESENCE_PENALTY = 0.01;
 
-      for (const rule of d.symptomRules) {
-        const inst = instMap.get(rule.name);
-        if (!inst) {
-          // мы ещё не спрашивали про этот симптом — пропускаем его
-          continue;
-        }
+    const rawScores = diseases.map((d) => {
+      let logScore = Math.log(d.prior);
 
-        const p = rule.probability;
-        // проверяем предикаты (severity / duration), если это положительный факт
+      // обработка фактов о симптомах
+      for (const key of allSymptomKeys) {
+        const inst = instMap.get(key);
+        const rule = d.symptomRules.find((r) => r.name === key);
+
         if (inst.presence) {
-          const okSeverity =
-            rule.minSeverity == null ||
-            (inst.severity ?? 0) >= rule.minSeverity;
-          const okDuration =
-            rule.minDurationDays == null ||
-            (inst.durationDays ?? 0) >= rule.minDurationDays;
-          score *= okSeverity && okDuration ? p : p * 0.5;
+          // если болезнь связана с симптомом — добавляем log(p), иначе штраф
+          logScore += Math.log(
+            rule ? rule.probability : MISSING_PRESENCE_PENALTY,
+          );
         } else {
-          // явное отсутствие симптома
-          score *= 1 - p;
+          // отсутствие симптома: только если болезнь ожидает этот симптом
+          if (rule) {
+            logScore += Math.log(1 - rule.probability);
+          }
         }
       }
 
-      return { name: d.name, score };
+      // учесть симптомы болезни, по которым факт неизвестен (разрежение)
+      // при необходимости можно игнорировать
+
+      return { disease: d.name, logScore };
     });
 
-    // нормализуем в [0,1]
-    const total = raw.reduce((sum, x) => sum + x.score, 0) || 1;
-    const normalized = raw.map((x) => ({
-      name: x.name,
-      score: x.score / total,
+    // нормализация через softmax для числовой стабильности
+    const maxLog = Math.max(...rawScores.map((r) => r.logScore));
+    const exps = rawScores.map((r) => ({
+      disease: r.disease,
+      exp: Math.exp(r.logScore - maxLog),
     }));
 
-    // готовый формат Ranking
-    return normalized
-      .map((x) => ({ disease: x.name, score: x.score }))
-      .sort((a, b) => b.score - a.score);
+    const sumExp = exps.reduce((sum, x) => sum + x.exp, 0);
+    const rankings: Ranking[] = exps.map((x) => ({
+      disease: x.disease,
+      score: x.exp / sumExp,
+    }));
+
+    return rankings.sort((a, b) => b.score - a.score);
   }
 }
