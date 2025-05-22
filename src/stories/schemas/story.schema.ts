@@ -38,7 +38,10 @@ export class Story {
 
   // Оценки вероятностей (ранжирование)
   @Prop({ type: [{ disease: String, score: Number }], default: [] })
-  ranking: Array<{ disease: string; score: number }>;
+  topRanking: Array<{ disease: string; score: number }>;
+
+  @Prop({ type: [{ disease: String, score: Number }], default: [] })
+  fullRanking: Array<{ disease: string; score: number }>;
 
   // Простая статистика
   @Prop({
