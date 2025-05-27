@@ -21,13 +21,7 @@ import { Disease, DiseaseSchema } from '../diseases/schemas/disease.schema';
     MongooseModule.forFeature([{ name: Disease.name, schema: DiseaseSchema }]),
   ],
   controllers: [AdminController],
-  providers: [
-    AdminService,
-    UsersService,
-    ScenariosService,
-    DiseasesService,
-    SessionService,
-  ],
+  providers: [AdminService, UsersService, ScenariosService, DiseasesService, SessionService],
   exports: [AdminService],
 })
 export class AdminModule {}

@@ -27,9 +27,6 @@ export class AuthService {
     if (!user)
       throw new HttpException('Пользователь не найден', HttpStatus.NOT_FOUND); // User Not Found
 
-    // if (user.status == 'pending')
-    //   throw new HttpException('Почта не подтверждена', HttpStatus.UNAUTHORIZED); // No confirm
-
     const passwordsIsEqual = await bcrypt.compare(
       dto.password,
       user.hashedPassword,
@@ -76,7 +73,7 @@ export class AuthService {
       throw new HttpException(
         'Пользователь с таким email уже существует',
         HttpStatus.BAD_REQUEST,
-      ); // User already exists
+      );
 
     const hashedPassword = await bcrypt.hash(dto.password, 5);
     const user = await this.usersService.create({
