@@ -15,25 +15,16 @@ import { Type } from 'class-transformer';
  */
 export class CreateSymptomRuleDto {
   /** Название симптома из словаря */
-  @IsString()
-  @IsNotEmpty()
-  name: string;
+  @IsString() @IsNotEmpty() name: string;
 
   /** Условная вероятность появления симптома [0,1] */
-  @IsNumber()
-  @Min(0)
-  @Max(1)
-  probability: number;
+  @IsNumber() @Min(0) @Max(1) probability: number;
 
   /** Минимальная тяжесть симптома (необязательно) */
-  @IsOptional()
-  @IsNumber()
-  minSeverity?: number;
+  @IsOptional() @IsNumber() minSeverity?: number;
 
   /** Минимальная длительность симптома в днях (необязательно) */
-  @IsOptional()
-  @IsNumber()
-  minDurationDays?: number;
+  @IsOptional() @IsNumber() minDurationDays?: number;
 }
 
 /**
@@ -44,17 +35,12 @@ export class CreateDiseaseDto {
    * Уникальное человекочитаемое название болезни,
    * например "грипп" или "ОРВИ"
    */
-  @IsString()
-  @IsNotEmpty()
-  name: string;
+  @IsString() @IsNotEmpty() name: string;
 
   /**
    * Априорная вероятность P(disease) в диапазоне [0,1]
    */
-  @IsNumber()
-  @Min(0)
-  @Max(1)
-  prior: number;
+  @IsNumber() @Min(0) @Max(1) prior: number;
 
   /**
    * Список правил симптомов для болезни

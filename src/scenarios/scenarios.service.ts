@@ -4,7 +4,6 @@ import { Model } from 'mongoose';
 import { Scenario, ScenarioDocument } from './scenario.schema';
 import { CreateScenarioDto } from './dto/create-scenario.dto';
 import { UpdateScenarioDto } from './dto/update-scenario.dto';
-import { evalRule } from './functions/evalRule';
 
 @Injectable()
 export class ScenariosService {
@@ -18,21 +17,6 @@ export class ScenariosService {
 
   findAll() {
     return this.model.find().exec();
-  }
-
-  async findRelevant(symptoms: string[]): Promise<ScenarioDocument[]> {
-    const all = await this.findAll();
-    const facts = new Set(symptoms);
-
-    // 1) Частичный отбор: хотя бы один симптом в формуле
-    const partial = all.filter((s) =>
-      symptoms.some((sym) => s.rule.includes(sym)),
-    );
-
-    // 2) Строгая фильтрация по булевой формуле
-    const exact = partial.filter((s) => evalRule(s.rule, facts));
-
-    return exact.length ? exact : partial;
   }
 
   /** Находит все сценарии, где diseaseKeys содержит diseaseKey */

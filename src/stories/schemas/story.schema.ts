@@ -15,6 +15,10 @@ export class Story {
   @Prop({ type: [String], required: true })
   scenarioIds: string[];
 
+  // Какие симптомы были изначально задействованы
+  @Prop({ type: [String], required: true })
+  initialKeys: string[];
+
   // История вопросов: ключ, текст, ответ (да/нет), отметка времени
   @Prop({
     type: [

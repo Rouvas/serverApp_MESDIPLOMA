@@ -6,11 +6,13 @@ export interface ScenarioTrack {
 }
 
 export interface Session {
-  instances: SymptomInstanceDto[]; // все факты: yes/no
-  tracks: ScenarioTrack[]; // по одному треку на сценарий
-  questionHistory: QuestionHistoryItem[]; // вопросы, которые были
-  fullRanking: any;
-  topRanking: any;
+  instances: SymptomInstanceDto[];
+  initialKeys: string[]; // Массив ключей симптомов из начального ввода
+  fullRanking: { disease: string; score: number; percentage: number }[];
+  topRanking: { disease: string; score: number; percentage: number }[];
+  scenarios: any[]; // Список подходящих сценариев после evaluateScenarioRule
+  tracks: Array<{ scenarioId: string; askedKeys: Set<string> }>;
+  questionHistory: { key: string; text: string; answer: boolean }[];
   finished: boolean;
 }
 

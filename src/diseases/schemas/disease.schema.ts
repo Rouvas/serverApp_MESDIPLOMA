@@ -5,31 +5,21 @@ export type DiseaseDocument = Disease & Document;
 
 @Schema()
 export class SymptomRule {
-  @Prop({ required: true })
-  name: string;
-
-  @Prop({ required: true })
-  probability: number;
-
-  @Prop()
-  minSeverity?: number;
-
-  @Prop()
-  minDurationDays?: number;
+  @Prop({ required: true }) name: string;
+  @Prop({ required: true }) probability: number;
+  @Prop() minSeverity?: number;
+  @Prop() minDurationDays?: number;
 }
 export const SymptomRuleSchema = SchemaFactory.createForClass(SymptomRule);
 
 @Schema()
 export class Disease {
-  @Prop({ required: true }) // название, например "грипп"
-  name: string;
-
-  @Prop({ required: true, default: 0.01 }) // априорная вероятность
-  prior: number;
-
+  // название, например "грипп"
+  @Prop({ required: true }) name: string;
+  // априорная вероятность
+  @Prop({ required: true, default: 0.01 }) prior: number;
   // карта симптом→условная вероятность P(symptom|disease) и предикаты
-  @Prop({ type: [SymptomRuleSchema], default: [] })
-  symptomRules: SymptomRule[];
+  @Prop({ type: [SymptomRuleSchema], default: [] }) symptomRules: SymptomRule[];
 }
 
 export const DiseaseSchema = SchemaFactory.createForClass(Disease);

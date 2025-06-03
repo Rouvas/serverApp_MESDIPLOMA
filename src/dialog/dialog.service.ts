@@ -1,4 +1,6 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+// src/dialog/dialog.service.ts
+
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { NlpService } from '../nlp/nlp.service';
 import { ScenariosService } from '../scenarios/scenarios.service';
@@ -28,13 +30,17 @@ export class DialogService {
    * выбираем сценарии и готовим первый вопрос
    */
   async start(text: string) {
+    // 1. Выделяем симптомы из текста и собираем ключи тех, что presence=true
     const instances: SymptomInstanceDto[] = await this.nlp.extract(text);
     const instanceKeys = instances.filter((i) => i.presence).map((i) => i.key);
 
-    // Расчет базового рейтинга
-    const baseRanking = await this.bayes.calculateScores(instances);
+    // 2. Расчёт рейтингов с передачей initialKeys
+    const baseRanking = await this.bayes.calculateScores(
+      instances,
+      instanceKeys,
+    );
 
-    // Полный рейтинг (fullRanking)
+    // 3. Полный рейтинг (fullRanking) с процентами
     const sumFull = baseRanking.reduce((sum, r) => sum + r.score, 0) || 1;
     let cumFull = 0;
     const fullRanking = baseRanking.map((r, idx) => {
@@ -45,8 +51,8 @@ export class DialogService {
       return { disease: r.disease, score: r.score, percentage: pct };
     });
 
-    // Топ-4 рейтинг (topRanking)
-    const rawTop = baseRanking.slice(0, 4);
+    // 4. Топ-4 рейтинг (topRanking) с процентами
+    const rawTop = baseRanking.slice(0, MAX_RANKING);
     const sumTop = rawTop.reduce((sum, r) => sum + r.score, 0) || 1;
     let cumTop = 0;
     const topRanking = rawTop.map((r, idx) => {
@@ -56,7 +62,7 @@ export class DialogService {
       return { disease: r.disease, score: r.score, percentage: pct };
     });
 
-    // Загрузка сценариев по топ-болезням и по симптомам
+    // 5. Загрузка сценариев по топ-болезням и по исходным симптомам
     const topDiseases = rawTop.map((r) => r.disease);
     const byDisease = await Promise.all(
       topDiseases.map((d) => this.scenariosSvc.findByDiseaseKey(d)),
@@ -66,6 +72,7 @@ export class DialogService {
       s.ruleKeys.some((k) => instanceKeys.includes(k)),
     );
 
+    // 6. Объединяем без дубликатов
     const combined = new Map<string, any>();
     for (const s of [...byDisease.flat(), ...bySymptoms]) {
       combined.set(String((s as any)._id), s);
@@ -79,28 +86,36 @@ export class DialogService {
       scenarios.map((s) => s.name),
     );
 
+    // 7. Отбираем те сценарии, правила которых удовлетворяются уже извлечёнными фактами
     const matched = scenarios.filter((s) =>
       evaluateScenarioRule(s.rule, instances),
     );
     const dialogId = randomUUID();
 
-    // Инициализация сессии
-    const session = {
+    // 8. Инициализация сессии: помечаем instanceKeys как уже «опрошенные»
+    const session: Session = {
       instances,
+      initialKeys: instanceKeys,
       fullRanking,
       topRanking,
       scenarios: matched,
       tracks: matched.map((s) => ({
         scenarioId: String(s._id),
-        askedKeys: new Set<string>(),
+        askedKeys: new Set<string>(instanceKeys), // ← сразу помечаем, что эти ключи заданы
       })),
-      questionHistory: [] as { key: string; text: string; answer: boolean }[],
+      questionHistory: [],
       finished: matched.length === 0,
     };
 
     this.sessions.set(dialogId, session);
 
-    const nextQuestion = matched.length ? matched[0].questions[0] : null;
+    // 9. Выбираем первый вопрос, пропуская уже отмеченные instanceKeys
+    let nextQuestion = null;
+    if (matched.length > 0) {
+      const askedKeys = new Set<string>(instanceKeys);
+      nextQuestion = this.pickNextQuestion(matched, askedKeys);
+    }
+
     return {
       dialogId,
       instances,
@@ -109,31 +124,41 @@ export class DialogService {
       scenarios: matched,
       nextQuestion,
       questionNumber: nextQuestion ? 1 : 0,
-      totalQuestions: nextQuestion ? matched[0].questions.length : 0,
+      totalQuestions: matched.length > 0 ? matched[0].questions.length : 0,
       percentComplete: 0,
       finished: matched.length === 0,
     };
   }
 
+  /**
+   * Продолжение диалога: пользователь отвечает на вопрос (yes/no),
+   * обновляем instances, пересчитываем рейтинги и выбираем следующий вопрос
+   */
   async next(dialogId: string, key: string, answer: string) {
     const session = this.sessions.get(dialogId);
     if (!session) throw new NotFoundException(`Session ${dialogId} not found`);
 
-    // Обработка ответа
+    // 1. Обновляем массив instances (или добавляем новый симптом)
     const presence = answer.trim().toLowerCase() === 'yes';
-    const idx = session.instances.findIndex((i: any) => i.key === key);
-    if (idx >= 0) session.instances[idx].presence = presence;
-    else session.instances.push({ key, presence });
+    const idx = session.instances.findIndex((i) => i.key === key);
+    if (idx >= 0) {
+      session.instances[idx].presence = presence;
+    } else {
+      session.instances.push({ key, presence });
+    }
 
-    // Отметить вопрос в треке
+    // 2. Отмечаем вопрос в активном треке
     const track = session.tracks[0];
     if (!track) throw new NotFoundException(`No active track`);
-    if (!track.askedKeys) track.askedKeys = new Set<string>();
     track.askedKeys.add(key);
 
-    // Пересчет рейтингов
-    const baseRanking = await this.bayes.calculateScores(session.instances);
-    // fullRanking
+    // 3. Пересчёт рейтингов с учётом initialKeys
+    const baseRanking = await this.bayes.calculateScores(
+      session.instances,
+      session.initialKeys,
+    );
+
+    // 4. Обновляем fullRanking
     const sumFull = baseRanking.reduce((sum, r) => sum + r.score, 0) || 1;
     let cumFull2 = 0;
     session.fullRanking = baseRanking.map((r, idx) => {
@@ -143,8 +168,9 @@ export class DialogService {
       cumFull2 += pct;
       return { disease: r.disease, score: r.score, percentage: pct };
     });
-    // topRanking
-    const rawTop2 = baseRanking.slice(0, 4);
+
+    // 5. Обновляем topRanking
+    const rawTop2 = baseRanking.slice(0, MAX_RANKING);
     const sumTop2 = rawTop2.reduce((sum, r) => sum + r.score, 0) || 1;
     let cumTop2 = 0;
     session.topRanking = rawTop2.map((r, idx) => {
@@ -155,27 +181,27 @@ export class DialogService {
       return { disease: r.disease, score: r.score, percentage: pct };
     });
 
-    // Загрузка сценариев
+    // 6. Загрузка актуальных объектов сценариев (по ID из треков)
     const scenarioObjs = await Promise.all(
-      session.tracks.map((t: any) => this.scenariosSvc.findById(t.scenarioId)),
+      session.tracks.map((t) => this.scenariosSvc.findById(t.scenarioId)),
     );
 
-    // История вопросов
+    // 7. Записываем историю ответа
     const questionText =
       scenarioObjs
         .flatMap((s: any) => s.questions)
         .find((q: any) => q.key === key)?.text || key;
     session.questionHistory.push({ key, text: questionText, answer: presence });
 
-    // Выбор следующего вопроса
-    const askedKeys = session.tracks.reduce((set: Set<string>, t: any) => {
+    // 8. Выбираем следующий вопрос, учитывая уже заданные initialKeys + предыдущие ответы
+    const askedKeys = session.tracks.reduce((set: Set<string>, t) => {
       t.askedKeys.forEach((k: string) => set.add(k));
       return set;
     }, new Set<string>());
-    const nextQuestion = this.pickNextQuestion(scenarioObjs as any, askedKeys);
+    const nextQuestion = this.pickNextQuestion(scenarioObjs, askedKeys);
     session.finished = !nextQuestion;
 
-    // Прогресс
+    // 9. Считаем прогресс
     const allKeys = new Set<string>();
     scenarioObjs.forEach((s: any) =>
       s.questions.forEach((q: any) => allKeys.add(q.key)),
@@ -209,17 +235,20 @@ export class DialogService {
     const session = this.sessions.get(dialogId);
     if (!session) throw new NotFoundException(`Session ${dialogId} not found`);
 
-    // Подготовка статистики: сколько вопросов и сценариев
+    // 1. Подготовка статистики
     const statistics = {
       questionCount: session.questionHistory.length,
       scenarioCount: session.tracks.length,
     };
     const scenarioIds = session.tracks.map((t) => t.scenarioId);
 
-    // Пересчет рейтингов перед сохранением
-    const baseRanking = await this.bayes.calculateScores(session.instances);
+    // 2. Пересчёт рейтингов перед сохранением с теми же initialKeys
+    const baseRanking = await this.bayes.calculateScores(
+      session.instances,
+      session.initialKeys,
+    );
 
-    // fullRanking и topRanking с процентами (логика аналогична выше)
+    // 3. Формируем fullRanking для сохранения
     const sumFull = baseRanking.reduce((sum, r) => sum + r.score, 0) || 1;
     let cumulativeSave = 0;
     const fullRanking = baseRanking.map((r, idx) => {
@@ -231,6 +260,8 @@ export class DialogService {
       cumulativeSave += pct;
       return { disease: r.disease, score: r.score, percentage: pct };
     });
+
+    // 4. Формируем topRanking для сохранения
     const rawTop = baseRanking.slice(0, MAX_RANKING);
     const sumTop = rawTop.reduce((sum, r) => sum + r.score, 0) || 1;
     let cumulativeSaveTop = 0;
@@ -244,25 +275,27 @@ export class DialogService {
       return { disease: r.disease, score: r.score, percentage: pct };
     });
 
-    // Сохранение диалога в БД
+    // 5. Сохранение диалога в БД (через StoriesService)
     const dialog = await this.story.saveStory({
       dialogId,
       userId,
       scenarioIds,
       questionHistory: session.questionHistory,
       instances: session.instances,
+      initialKeys: session.initialKeys,
       fullRanking,
       topRanking,
       statistics,
     });
 
-    // Удаляем сессию после сохранения
+    // 6. Удаляем сессию из памяти
     this.sessions.delete(dialogId);
     return { ...dialog, fullRanking, topRanking };
   }
 
   /**
-   * Выбирает следующий незаданный вопрос из списка сценариев
+   * Выбирает следующий незаданный вопрос из списка сценариев,
+   * пропуская уже помеченные в askedKeys (включая initialKeys).
    */
   private pickNextQuestion(
     scenarios: Array<{ questions: Array<{ key: string; text: string }> }>,
@@ -272,6 +305,6 @@ export class DialogService {
       const q = scen.questions.find((q) => !askedKeys.has(q.key));
       if (q) return q;
     }
-    return null; // вопросов больше нет
+    return null;
   }
 }

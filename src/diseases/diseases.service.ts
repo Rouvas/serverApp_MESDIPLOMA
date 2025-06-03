@@ -18,24 +18,9 @@ export class DiseasesService {
   }
 
   async findById(id: string): Promise<DiseaseDocument> {
-    const u = await this.model.findById(id).exec();
-    if (!u) throw new NotFoundException(`Disease ${id} not found`);
-    return u;
-  }
-
-  /**
-   * Поиск заболеваний, у которых в наборе symptomMap есть хотя бы один из ключей
-   * @param symptoms - список названий симптомов
-   */
-  findBySymptoms(symptoms: string[]) {
-    if (!symptoms || !symptoms.length) {
-      return this.model.find().exec();
-    }
-    // Строим $or: [ { 'symptoms.кашель': { $exists: true } }, ... ]
-    const orFilter = symptoms.map((s) => ({
-      [`symptoms.${s}`]: { $exists: true },
-    }));
-    return this.model.find({ $or: orFilter }).exec();
+    const d = await this.model.findById(id).exec();
+    if (!d) throw new NotFoundException(`Disease ${id} not found`);
+    return d;
   }
 
   async update(id: string, dto: UpdateDiseaseDto) {

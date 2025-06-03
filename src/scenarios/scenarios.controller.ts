@@ -42,16 +42,6 @@ export class ScenariosController {
     return this.svc.findById(id);
   }
 
-  @Get('search')
-  @ApiOperation({ summary: 'Найти подходящие сценарии по симптомам' })
-  findRelevant(@Query('symptoms') list: string) {
-    const arr = list
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    return this.svc.findRelevant(arr);
-  }
-
   @Patch(':id')
   @Roles(Role.Admin, Role.Operator)
   @ApiOperation({ summary: 'Обновить сценарий' })
